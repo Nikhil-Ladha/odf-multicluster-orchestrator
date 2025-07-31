@@ -23,6 +23,7 @@ import (
 	"slices"
 	"time"
 
+	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
 	multiclusterv1alpha1 "github.com/red-hat-storage/odf-multicluster-orchestrator/api/v1alpha1"
 	"github.com/red-hat-storage/odf-multicluster-orchestrator/controllers/utils"
 	corev1 "k8s.io/api/core/v1"
@@ -181,6 +182,13 @@ func (r *MirrorPeerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 		logger.Info("Labeled the default VolumeSnapshotClasses successfully")
+
+		if mirrorPeer.Annotations != nil && mirrorPeer.Annotations[KeyTypeAnnotation] != "" {
+			err = r.updateKeyTypeAnnotationOnSC(ctx, scr.Name, scr.Namespace, mirrorPeer.Annotations[KeyTypeAnnotation])
+			if err != nil {
+				return ctrl.Result{}, fmt.Errorf("failed to update keyTypeSupported annotation for keyRotation on the storagecluster %q in namespace %q in managed cluster: %v", scr.Name, scr.Namespace, err)
+			}
+		}
 	}
 
 	if mirrorPeer.Spec.Type == multiclusterv1alpha1.Async && hasStorageClientRef {
@@ -465,4 +473,33 @@ func (r *MirrorPeerReconciler) deleteMirrorPeer(ctx context.Context, mirrorPeer 
 
 	r.Logger.Info("Successfully completed the deletion of MirrorPeer resources", "MirrorPeer", mirrorPeer.Name)
 	return ctrl.Result{}, nil
+}
+
+func (r *MirrorPeerReconciler) updateKeyTypeAnnotationOnSC(ctx context.Context, scName, scNamespace, keyVal string) error {
+	var sc ocsv1.StorageCluster
+	err := r.SpokeClient.Get(ctx, types.NamespacedName{
+		Name:      scName,
+		Namespace: scNamespace,
+	}, &sc)
+
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Errorf("could not find StorageCluster %q in namespace %v: %v", scName, scNamespace, err)
+		}
+		r.Logger.Error("Failed to retrieve StorageCluster", "storageClusterName", scName, "namespace", scNamespace, "error", err)
+		return err
+	}
+
+	if sc.Annotations == nil {
+		sc.Annotations = make(map[string]string)
+	}
+
+	sc.Annotations[KeyTypeAnnotation] = keyVal
+
+	err = r.SpokeClient.Update(ctx, &sc)
+	if err != nil {
+		r.Logger.Error("Failed to update StorageCluster annotation", "storageClusterName", scName, "annotation", KeyTypeAnnotation, "error", err)
+	}
+
+	return err
 }

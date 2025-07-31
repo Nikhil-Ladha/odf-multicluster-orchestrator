@@ -270,6 +270,44 @@ func (r *MirrorPeerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return r.updateMirrorPeerStatusMessage(ctx, mirrorPeer, false, err)
 	}
 
+	// Set keyType for keyRotation
+	if !hasStorageClientRef {
+		items := mirrorPeer.Spec.Items
+		ci1, err := utils.GetClientInfoFromConfigMap(clientInfoMap.Data, utils.GetKey(items[0].ClusterName, items[0].StorageClusterRef.Name))
+		if err != nil {
+			logger.Error("Failed to get client info from ConfigMap for the first cluster")
+			return ctrl.Result{}, err
+		}
+
+		logger.Info("Fetched client info for the first cluster", "ClientInfo", ci1)
+
+		ci2, err := utils.GetClientInfoFromConfigMap(clientInfoMap.Data, utils.GetKey(items[1].ClusterName, items[1].StorageClusterRef.Name))
+		if err != nil {
+			logger.Error("Failed to get client info from ConfigMap for the second cluster")
+			return ctrl.Result{}, err
+		}
+
+		logger.Info("Fetched client info for the second cluster", "ClientInfo", ci2)
+
+		if mirrorPeerCopy.Annotations == nil {
+			mirrorPeerCopy.Annotations = make(map[string]string)
+		}
+
+		if ci1.ProviderInfo.Version == ci2.ProviderInfo.Version {
+			mirrorPeerCopy.Annotations[addons.KeyTypeAnnotation] = "aes256k"
+		} else {
+			mirrorPeerCopy.Annotations[addons.KeyTypeAnnotation] = "aes"
+		}
+
+		logger.Info("Adding keyType annotation to mirrorpeer", "keyType", mirrorPeerCopy.Annotations[addons.KeyTypeAnnotation])
+
+		err = r.Client.Update(ctx, mirrorPeerCopy)
+		if err != nil {
+			logger.Error("Failed to update mirrorpeer with keyType annotation", "error", err)
+			return checkK8sUpdateErrors(err, mirrorPeerCopy, logger)
+		}
+	}
+
 	if err := r.processManagedClusterAddon(ctx, mirrorPeer); err != nil {
 		logger.Error("Failed to process managedclusteraddon", "error", err)
 		return r.updateMirrorPeerStatusMessage(ctx, mirrorPeer, false, err)

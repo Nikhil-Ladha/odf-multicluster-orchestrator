@@ -16,6 +16,7 @@ const (
 	OBCTypeAnnotationKey          = "multicluster.odf.openshift.io/obc-type"
 	OBCNameAnnotationKey          = "multicluster.odf.openshift.io/obc-name"
 	AddonDeletionlockName         = "token-exchange-addon-lock"
+	KeyTypeAnnotation             = "multicluster.odf.openshift.io/rbdMirroringKeyType"
 )
 
 var (
