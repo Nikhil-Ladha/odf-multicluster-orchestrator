@@ -326,6 +326,37 @@ func (r *MirrorPeerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 	}
 
+	if mirrorPeerCopy.Annotations == nil {
+		mirrorPeerCopy.Annotations = make(map[string]string)
+	}
+
+	// // Set keyRotation type on mirrorpeer
+	if mirrorPeer.Annotations == nil || mirrorPeer.Annotations[addons.KeyTypeAnnotation] != addons.KeyTypeAES256k {
+		keyTypeAnnSpoke1 := fmt.Sprintf("%s.%s", mirrorPeer.Spec.Items[0].ClusterName, addons.SpokeKeyTypeAnnotation)
+		keyTypeAnnSpoke2 := fmt.Sprintf("%s.%s", mirrorPeer.Spec.Items[1].ClusterName, addons.SpokeKeyTypeAnnotation)
+		keyTypeAnnSpoke1Val, keyTypeAnnSpoke2Val := "", ""
+		if mirrorPeer.Annotations != nil {
+			// Get annotation values for each spoke
+			keyTypeAnnSpoke1Val = mirrorPeer.Annotations[keyTypeAnnSpoke1]
+			keyTypeAnnSpoke2Val = mirrorPeer.Annotations[keyTypeAnnSpoke2]
+		}
+
+		// Set keyType annotation on mirrorpeer based on the spoke annotations
+		hubAnnVal := addons.KeyTypeAES
+		if keyTypeAnnSpoke1Val == addons.KeyTypeAES256k && keyTypeAnnSpoke2Val == addons.KeyTypeAES256k {
+			hubAnnVal = addons.KeyTypeAES256k
+		}
+
+		logger.Info("Adding/Updating keyType annotation to mirrorpeer")
+		mirrorPeerCopy.Annotations[addons.KeyTypeAnnotation] = hubAnnVal
+
+		err = r.Client.Update(ctx, mirrorPeerCopy)
+		if err != nil {
+			logger.Error("Failed to update mirrorpeer with keyType annotation", "error", err)
+			return checkK8sUpdateErrors(err, mirrorPeerCopy, logger)
+		}
+	}
+
 	if hasStorageClientRef && mirrorPeer.Spec.Type == multiclusterv1alpha1.Async {
 		result, err := createStorageClusterPeer(ctx, r.Client, logger, r.CurrentNamespace, mirrorPeer)
 		if err != nil {

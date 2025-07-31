@@ -23,8 +23,10 @@ import (
 	"slices"
 	"time"
 
+	ocsv1 "github.com/red-hat-storage/ocs-operator/api/v4/v1"
 	multiclusterv1alpha1 "github.com/red-hat-storage/odf-multicluster-orchestrator/api/v1alpha1"
 	"github.com/red-hat-storage/odf-multicluster-orchestrator/controllers/utils"
+	"github.com/red-hat-storage/odf-multicluster-orchestrator/version"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -181,6 +183,43 @@ func (r *MirrorPeerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 
 		logger.Info("Labeled the default VolumeSnapshotClasses successfully")
+	}
+
+	// Set keyRotation type on SC based on the value of mirrorpeer annotation
+	if mirrorPeer.Annotations == nil {
+		mirrorPeer.Annotations = make(map[string]string)
+	}
+
+	spokeKeyTypeAnn := fmt.Sprintf("%s.%s", r.SpokeClusterName, SpokeKeyTypeAnnotation)
+	var sc ocsv1.StorageCluster
+	err = r.SpokeClient.Get(ctx, types.NamespacedName{
+		Name:      scr.Name,
+		Namespace: scr.Namespace,
+	}, &sc)
+	if err != nil {
+		if errors.IsNotFound(err) {
+			return ctrl.Result{}, fmt.Errorf("could not find StorageCluster %q in namespace %v: %v", scr.Name, scr.Namespace, err)
+		}
+		r.Logger.Error("Failed to retrieve StorageCluster", "storageClusterName", scr.Name, "namespace", scr.Namespace, "error", err)
+		return ctrl.Result{}, err
+	}
+
+	spokeAnnVal := KeyTypeAES
+	if mirrorPeer.Annotations[KeyTypeAnnotation] != KeyTypeAES256k {
+		if sc.Status.Version >= version.Version {
+			spokeAnnVal = KeyTypeAES256k
+		}
+		if mirrorPeer.Annotations[spokeKeyTypeAnn] != spokeAnnVal {
+			mirrorPeer.Annotations[spokeKeyTypeAnn] = spokeAnnVal
+			if err := r.HubClient.Update(ctx, &mirrorPeer); err != nil {
+				logger.Error("Failed to update spoke cluster keyType annotation on MirrorPeer", "error", err)
+				return ctrl.Result{}, err
+			}
+		}
+	}
+	err = r.updateKeyTypeAnnotationOnSC(ctx, sc, mirrorPeer.Annotations[KeyTypeAnnotation])
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("failed to update keyTypeSupported annotation for keyRotation on the storagecluster %q in namespace %q in managed cluster: %v", scr.Name, scr.Namespace, err)
 	}
 
 	if mirrorPeer.Spec.Type == multiclusterv1alpha1.Async && hasStorageClientRef {
@@ -465,4 +504,19 @@ func (r *MirrorPeerReconciler) deleteMirrorPeer(ctx context.Context, mirrorPeer 
 
 	r.Logger.Info("Successfully completed the deletion of MirrorPeer resources", "MirrorPeer", mirrorPeer.Name)
 	return ctrl.Result{}, nil
+}
+
+func (r *MirrorPeerReconciler) updateKeyTypeAnnotationOnSC(ctx context.Context, sc ocsv1.StorageCluster, keyVal string) error {
+	if sc.Annotations == nil {
+		sc.Annotations = make(map[string]string)
+	}
+
+	sc.Annotations[SCKeyTypeAnnotation] = keyVal
+
+	var err error
+	if err = r.SpokeClient.Update(ctx, &sc); err != nil {
+		r.Logger.Error("Failed to update StorageCluster annotation", "storageClusterName", sc.Name, "annotation", SCKeyTypeAnnotation, "error", err)
+	}
+
+	return err
 }
