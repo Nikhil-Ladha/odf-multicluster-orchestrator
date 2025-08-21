@@ -71,7 +71,8 @@ func (r *MirrorPeerReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	hasStorageClientRef, err := utils.IsStorageClientType(ctx, r.SpokeClient, mirrorPeer, true)
+	hubOperatorNamespace := utils.GetEnv("HUB_OPERATOR_NAMESPACE")
+	hasStorageClientRef, err := utils.IsStorageClientType(ctx, r.HubClient, mirrorPeer, hubOperatorNamespace)
 	logger.Info("MirrorPeer has client reference?", "True/False", hasStorageClientRef)
 
 	if err != nil {
