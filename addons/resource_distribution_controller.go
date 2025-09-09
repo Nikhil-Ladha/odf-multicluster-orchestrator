@@ -126,9 +126,10 @@ func (r *ResourceDistributionReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 
-	err = addFinalizerToObject(ctx, r.SpokeClient, &addonDeletionlock, ResourceDistributionFinalizer)
+	var storageClientMapping *corev1.ConfigMap
+	storageClientMapping, err = utils.GetStorageClientMapping(ctx, r.SpokeClient, r.CurrentNamespace)
 	if err != nil {
-		return ctrl.Result{}, err
+		return ctrl.Result{}, fmt.Errorf("unable to distribute resources to StorageConsumers: %w", err)
 	}
 
 	addVRCToConsumers := []string{}
@@ -141,8 +142,8 @@ func (r *ResourceDistributionReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	if len(storageConsumerList.Items) == 0 {
 		logger.Info("No StorageConsumer to add/remove resources.")
-		err = removeFinalizerFromObject(ctx, r.SpokeClient, &addonDeletionlock, ResourceDistributionFinalizer)
-		if err != nil {
+		addonDeletionlock.Data = nil
+		if err = r.SpokeClient.Update(ctx, &addonDeletionlock); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -156,17 +157,30 @@ func (r *ResourceDistributionReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	if len(templateList.Items) == 0 {
 		logger.Info("No resources to distribute to StorageConsumers.")
-		err = removeFinalizerFromObject(ctx, r.SpokeClient, &addonDeletionlock, ResourceDistributionFinalizer)
-		if err != nil {
+		addonDeletionlock.Data = nil
+		if err = r.SpokeClient.Update(ctx, &addonDeletionlock); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
 	}
 
-	var storageClientMapping *corev1.ConfigMap
-	storageClientMapping, err = utils.GetStorageClientMapping(ctx, r.SpokeClient, r.CurrentNamespace)
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("unable to distribute resources to StorageConsumers: %w", err)
+	if addonDeletionlock.Data == nil {
+		addonDeletionlock.Data = make(map[string]string)
+	}
+
+	deletionLockUpdated := false
+	for _, tmp := range templateList.Items {
+		cId := tmp.Labels[utils.CreatedForClientID]
+		if _, ok := addonDeletionlock.Data[cId]; !ok {
+			addonDeletionlock.Data[cId] = ""
+			deletionLockUpdated = true
+		}
+	}
+
+	if deletionLockUpdated {
+		if err = r.SpokeClient.Update(ctx, &addonDeletionlock); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	for k := range storageClientMapping.Data {

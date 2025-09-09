@@ -219,7 +219,7 @@ func (r *DRPolicyReconciler) createOrUpdateManifestWorkForVRCAndVGRC(ctx context
 
 		var manifestList []workv1.Manifest
 		for _, vrc := range vrcList {
-			vrcTemplateJson, err := getTemplateForVRC(vrc, cInfo.ProviderInfo.NamespacedName.Namespace)
+			vrcTemplateJson, err := getTemplateForVRC(vrc, cInfo.ProviderInfo.NamespacedName.Namespace, cInfo.ClientID)
 			if err != nil {
 				return fmt.Errorf("failed to get template for VRC %q, error %w", vrc.Name, err)
 			}
@@ -236,7 +236,7 @@ func (r *DRPolicyReconciler) createOrUpdateManifestWorkForVRCAndVGRC(ctx context
 				if cephblockpool.MirrorEnabled {
 					vgrcPoolName := fmt.Sprintf("%s-%v", vgrc.Name, utils.FnvHash(cephblockpool.Name))
 					vgrc.Spec.Parameters["pool"] = cephblockpool.Name
-					vgrcTemplateJson, err := getTemplateForVGRC(vgrc, vgrcPoolName, cInfo.ProviderInfo.NamespacedName.Namespace)
+					vgrcTemplateJson, err := getTemplateForVGRC(vgrc, vgrcPoolName, cInfo.ProviderInfo.NamespacedName.Namespace, cInfo.ClientID)
 					if err != nil {
 						return fmt.Errorf("failed to get template for VGRC %q, error %w", vrc.Name, err)
 					}
@@ -314,7 +314,7 @@ func (r *DRPolicyReconciler) createOrUpdateManifestWorkForVRCAndVGRC(ctx context
 	return nil
 }
 
-func getTemplateForVRC(vrc replicationv1alpha1.VolumeReplicationClass, templateNamespace string) ([]byte, error) {
+func getTemplateForVRC(vrc replicationv1alpha1.VolumeReplicationClass, templateNamespace, clientID string) ([]byte, error) {
 	vrcJson, err := json.Marshal(vrc)
 	if err != nil {
 		return []byte{}, fmt.Errorf("failed to marshal %v to JSON, error %w", vrc, err)
@@ -331,6 +331,7 @@ func getTemplateForVRC(vrc replicationv1alpha1.VolumeReplicationClass, templateN
 			Labels: map[string]string{
 				utils.CreatedByLabelKey:  utils.CreatorMulticlusterOrchestrator,
 				utils.ObjectKindLabelKey: "VolumeReplicationClass",
+				utils.CreatedForClientID: clientID,
 			},
 		},
 		Objects: []runtime.RawExtension{
@@ -348,7 +349,7 @@ func getTemplateForVRC(vrc replicationv1alpha1.VolumeReplicationClass, templateN
 	return vrcTemplateJson, nil
 }
 
-func getTemplateForVGRC(vgrc replicationv1alpha1.VolumeGroupReplicationClass, vgrcName string, templateNamespace string) ([]byte, error) {
+func getTemplateForVGRC(vgrc replicationv1alpha1.VolumeGroupReplicationClass, vgrcName string, templateNamespace, clientID string) ([]byte, error) {
 	vgrc.Name = vgrcName
 	vgrcJson, err := json.Marshal(vgrc)
 	if err != nil {
@@ -366,6 +367,7 @@ func getTemplateForVGRC(vgrc replicationv1alpha1.VolumeGroupReplicationClass, vg
 			Labels: map[string]string{
 				utils.CreatedByLabelKey:  utils.CreatorMulticlusterOrchestrator,
 				utils.ObjectKindLabelKey: "VolumeGroupReplicationClass",
+				utils.CreatedForClientID: clientID,
 			},
 		},
 		Objects: []runtime.RawExtension{
