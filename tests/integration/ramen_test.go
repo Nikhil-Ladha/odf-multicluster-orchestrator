@@ -157,10 +157,11 @@ var _ = Describe("Ramen Resource Tests", func() {
 			for i, pr := range fakeMirrorPeer.Spec.Items {
 				dc := &ramenv1alpha1.DRCluster{}
 				ssec := s3ClusterSecrets[i]
-				err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: pr.ClusterName}, dc)
-				Expect(err).NotTo(HaveOccurred())
+				Eventually(func() error {
+					return k8sClient.Get(context.TODO(), types.NamespacedName{Name: pr.ClusterName}, dc)
+				}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 				var s3Secret corev1.Secret
-				err = k8sClient.Get(context.TODO(), types.NamespacedName{Name: ssec.Name, Namespace: ssec.Namespace}, &s3Secret)
+				err := k8sClient.Get(context.TODO(), types.NamespacedName{Name: ssec.Name, Namespace: ssec.Namespace}, &s3Secret)
 				Expect(err).NotTo(HaveOccurred())
 				s3Token, err := utils.UnmarshalS3Secret(&s3Secret)
 				Expect(err).NotTo(HaveOccurred())

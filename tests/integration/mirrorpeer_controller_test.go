@@ -31,6 +31,7 @@ import (
 	multiclusterv1alpha1 "github.com/red-hat-storage/odf-multicluster-orchestrator/api/v1alpha1"
 	"github.com/red-hat-storage/odf-multicluster-orchestrator/controllers"
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	clusterv1 "open-cluster-management.io/api/cluster/v1"
@@ -233,49 +234,59 @@ var _ = Describe("MirrorPeer Validations", func() {
 		})
 		It("should return validation error ", func() {
 			By("updating MirrorPeer with len(MirrorPeer.Spec.Items) < 2", func() {
-				var newMirrorPeer multiclusterv1alpha1.MirrorPeer
-				err := k8sClient.Get(context.TODO(), types.NamespacedName{
-					Name:      "test-mirrorpeer-update",
-					Namespace: "",
-				}, &newMirrorPeer)
-				Expect(err).NotTo(HaveOccurred())
-				newMirrorPeer.Spec.Items = []multiclusterv1alpha1.PeerRef{
-					{
-						ClusterName: "test-provider-cluster1",
-						StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
-							Name:      "test-storagecluster-1",
-							Namespace: "test-storagecluster-ns1",
+				Eventually(func() bool {
+					var newMirrorPeer multiclusterv1alpha1.MirrorPeer
+					err := k8sClient.Get(context.TODO(), types.NamespacedName{
+						Name:      "test-mirrorpeer-update",
+						Namespace: "",
+					}, &newMirrorPeer)
+					if err != nil {
+						return false
+					}
+					newMirrorPeer.Spec.Items = []multiclusterv1alpha1.PeerRef{
+						{
+							ClusterName: "test-provider-cluster1",
+							StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
+								Name:      "test-storagecluster-1",
+								Namespace: "test-storagecluster-ns1",
+							},
 						},
-					},
-				}
-				err = k8sClient.Update(context.TODO(), &newMirrorPeer, &client.UpdateOptions{})
-				Expect(err).To(HaveOccurred())
+					}
+					err = k8sClient.Update(context.TODO(), &newMirrorPeer, &client.UpdateOptions{})
+					// We expect an error, and it should NOT be a Conflict error
+					return err != nil && !errors.IsConflict(err)
+				}, 10*time.Second, 250*time.Millisecond).Should(BeTrue())
 			})
 			By("updating MirrorPeer.Spec.Items to new values", func() {
-				var newMirrorPeer multiclusterv1alpha1.MirrorPeer
-				err := k8sClient.Get(context.TODO(), types.NamespacedName{
-					Name:      "test-mirrorpeer-update",
-					Namespace: "",
-				}, &newMirrorPeer)
-				Expect(err).NotTo(HaveOccurred())
-				newMirrorPeer.Spec.Items = []multiclusterv1alpha1.PeerRef{
-					{
-						ClusterName: "test-provider-cluster11",
-						StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
-							Name:      "test-storagecluster-11",
-							Namespace: "test-storagecluster-ns11",
+				Eventually(func() bool {
+					var newMirrorPeer multiclusterv1alpha1.MirrorPeer
+					err := k8sClient.Get(context.TODO(), types.NamespacedName{
+						Name:      "test-mirrorpeer-update",
+						Namespace: "",
+					}, &newMirrorPeer)
+					if err != nil {
+						return false
+					}
+					newMirrorPeer.Spec.Items = []multiclusterv1alpha1.PeerRef{
+						{
+							ClusterName: "test-provider-cluster11",
+							StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
+								Name:      "test-storagecluster-11",
+								Namespace: "test-storagecluster-ns11",
+							},
 						},
-					},
-					{
-						ClusterName: "test-provider-cluster22",
-						StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
-							Name:      "test-storagecluster-22",
-							Namespace: "test-storagecluster-ns22",
+						{
+							ClusterName: "test-provider-cluster22",
+							StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
+								Name:      "test-storagecluster-22",
+								Namespace: "test-storagecluster-ns22",
+							},
 						},
-					},
-				}
-				err = k8sClient.Update(context.TODO(), &newMirrorPeer, &client.UpdateOptions{})
-				Expect(err).To(HaveOccurred())
+					}
+					err = k8sClient.Update(context.TODO(), &newMirrorPeer, &client.UpdateOptions{})
+					// We expect an error, and it should NOT be a Conflict error
+					return err != nil && !errors.IsConflict(err)
+				}, 10*time.Second, 250*time.Millisecond).Should(BeTrue())
 			})
 		})
 	})
@@ -355,30 +366,33 @@ var _ = Describe("MirrorPeer Validations", func() {
 		})
 		It("should not return validation error ", func() {
 			By("updating MirrorPeer.Spec.Items with reversed array index", func() {
-				var newMirrorPeer multiclusterv1alpha1.MirrorPeer
-				err := k8sClient.Get(context.TODO(), types.NamespacedName{
-					Name:      "test-mirrorpeer-update1",
-					Namespace: "",
-				}, &newMirrorPeer)
-				Expect(err).NotTo(HaveOccurred())
-				newMirrorPeer.Spec.Items = []multiclusterv1alpha1.PeerRef{
-					{
-						ClusterName: "test-provider-clusterb",
-						StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
-							Name:      "test-storagecluster-2",
-							Namespace: "test-storagecluster-ns2",
+				Eventually(func() error {
+					var newMirrorPeer multiclusterv1alpha1.MirrorPeer
+					err := k8sClient.Get(context.TODO(), types.NamespacedName{
+						Name:      "test-mirrorpeer-update1",
+						Namespace: "",
+					}, &newMirrorPeer)
+					if err != nil {
+						return err
+					}
+					newMirrorPeer.Spec.Items = []multiclusterv1alpha1.PeerRef{
+						{
+							ClusterName: "test-provider-clusterb",
+							StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
+								Name:      "test-storagecluster-2",
+								Namespace: "test-storagecluster-ns2",
+							},
 						},
-					},
-					{
-						ClusterName: "test-provider-clustera",
-						StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
-							Name:      "test-storagecluster-1",
-							Namespace: "test-storagecluster-ns1",
+						{
+							ClusterName: "test-provider-clustera",
+							StorageClusterRef: multiclusterv1alpha1.StorageClusterRef{
+								Name:      "test-storagecluster-1",
+								Namespace: "test-storagecluster-ns1",
+							},
 						},
-					},
-				}
-				err = k8sClient.Update(context.TODO(), &newMirrorPeer, &client.UpdateOptions{})
-				Expect(err).NotTo(HaveOccurred())
+					}
+					return k8sClient.Update(context.TODO(), &newMirrorPeer, &client.UpdateOptions{})
+				}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 			})
 		})
 	})
@@ -473,8 +487,10 @@ var _ = Describe("MirrorPeerReconciler Reconcile", func() {
 					},
 				}
 
-				_, err := r.Reconcile(context.TODO(), req)
-				Expect(err).NotTo(HaveOccurred())
+				Eventually(func() error {
+					_, err := r.Reconcile(context.TODO(), req)
+					return err
+				}, 10*time.Second, 250*time.Millisecond).Should(Succeed())
 
 			})
 		})
