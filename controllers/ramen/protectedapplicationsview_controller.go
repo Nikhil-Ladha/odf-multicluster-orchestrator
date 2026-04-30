@@ -31,20 +31,21 @@ import (
 )
 
 const (
-	labelAppType                     = "app.kubernetes.io/type"
-	labelDRPolicy                    = "ramendr.openshift.io/dr-policy"
-	placementLabel                   = "cluster.open-cluster-management.io/placement"
-	applicationSetKind               = "ApplicationSet"
-	subscriptionKind                 = "Subscription"
-	drpcKind                         = "DRPlacementControl"
-	placementKind                    = "Placement"
-	requeueAfterSeconds              = time.Duration(30 * time.Second)
-	subscriptionAnnotation           = "apps.open-cluster-management.io/subscriptions"
-	ramenAPIVersion                  = "ramendr.openshift.io/v1alpha1"
-	drPolicyKind                     = "DRPolicy"
-	subscriptionAPIVersion           = "apps.open-cluster-management.io/v1"
-	clusterDecisionResourceIndexName = "spec.generators.clusterDecisionResource.placement"
-	placementIndexName               = "spec.placementRef.name"
+	labelAppType                       = "app.kubernetes.io/type"
+	labelDRPolicy                      = "ramendr.openshift.io/dr-policy"
+	placementLabel                     = "cluster.open-cluster-management.io/placement"
+	applicationSetKind                 = "ApplicationSet"
+	subscriptionKind                   = "Subscription"
+	drpcKind                           = "DRPlacementControl"
+	placementKind                      = "Placement"
+	requeueAfterSeconds                = time.Duration(30 * time.Second)
+	subscriptionAnnotation             = "apps.open-cluster-management.io/subscriptions"
+	ramenAPIVersion                    = "ramendr.openshift.io/v1alpha1"
+	drPolicyKind                       = "DRPolicy"
+	subscriptionAPIVersion             = "apps.open-cluster-management.io/v1"
+	clusterDecisionResourceIndexName   = "spec.generators.clusterDecisionResource.placement"
+	placementIndexName                 = "spec.placementRef.name"
+	lastAppDeploymentClusterAnnotation = "drplacementcontrol.ramendr.openshift.io/last-app-deployment-cluster"
 )
 
 type ProtectedApplicationViewReconciler struct {
@@ -107,8 +108,16 @@ func (r *ProtectedApplicationViewReconciler) getPrimaryClusterFromDRPC(drpc *ram
 
 	default:
 		// For other states (Deploying, Deployed, Initiating, etc.)
-		// Use PreferredDecision as the source of truth
-		return drpc.Status.PreferredDecision.ClusterName
+		// 1. PreferredDecision is the scheduler-confirmed cluster (authoritative).
+		// 2. last-app-deployment-cluster annotation is reliably set by ramen.
+		// 3. Spec.PreferredCluster is user intent (last resort, better than empty).
+		if drpc.Status.PreferredDecision.ClusterName != "" {
+			return drpc.Status.PreferredDecision.ClusterName
+		}
+		if cluster, ok := drpc.Annotations[lastAppDeploymentClusterAnnotation]; ok && cluster != "" {
+			return cluster
+		}
+		return drpc.Spec.PreferredCluster
 	}
 }
 
