@@ -757,3 +757,47 @@ func TestPAVReconcile_DeployedPrimaryCluster(t *testing.T) {
 			pavTestCluster1, updatedPAV.Status.DRInfo.PrimaryCluster)
 	}
 }
+
+func TestPAVReconcile_DeployedPrimaryClusterAnnotationFallback(t *testing.T) {
+	pav := createTestPAV()
+	drpc := createTestDRPCForPAV()
+	drpc.Annotations = map[string]string{
+		lastAppDeploymentClusterAnnotation: pavTestCluster1,
+	}
+	drpc.Spec.FailoverCluster = pavTestCluster2
+	drpc.Status.Phase = ramenv1alpha1.Deployed
+	// PreferredDecision.ClusterName is empty — simulates ramen not having populated it yet
+
+	placement := createTestPlacementForPAV()
+	drPolicy := createTestDRPolicyForPAV()
+	placementDecision := createTestPlacementDecisionForPAV()
+
+	r := getFakePAVReconciler(pav, drpc, placement, drPolicy, placementDecision)
+
+	ctx := context.TODO()
+	req := ctrl.Request{
+		NamespacedName: types.NamespacedName{
+			Name:      pavTestDRPCName,
+			Namespace: pavTestNamespace,
+		},
+	}
+
+	_, err := r.Reconcile(ctx, req)
+	if err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+
+	updatedPAV := &multiclusterv1alpha1.ProtectedApplicationView{}
+	err = r.Get(ctx, types.NamespacedName{
+		Name:      pavTestDRPCName,
+		Namespace: pavTestNamespace,
+	}, updatedPAV)
+	if err != nil {
+		t.Fatalf("Failed to get PAV: %v", err)
+	}
+
+	if updatedPAV.Status.DRInfo.PrimaryCluster != pavTestCluster1 {
+		t.Errorf("Expected primary cluster %s (annotation fallback), got %s",
+			pavTestCluster1, updatedPAV.Status.DRInfo.PrimaryCluster)
+	}
+}
